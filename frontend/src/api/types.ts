@@ -25,6 +25,7 @@ export type ParkingRule = {
   max_duration_minutes?: number | null;
   price_per_hour?: number | null;
   exempt_resident_zones?: ResidentZone[];
+  exempt_local_zone?: boolean;
   exempt_disabled?: boolean | null;
   raw_text?: string | null;
 };
@@ -37,6 +38,7 @@ export type ParkingSignData = {
   curb_marking?: CurbMarking;
   rules?: ParkingRule[];
   unreadable_fields?: string[];
+  unsupported_conditions?: string[];
 };
 
 export type VehicleType = 'private' | 'commercial' | 'motorcycle';
@@ -47,11 +49,27 @@ export type UserProfile = {
   has_disabled_permit: boolean;
 };
 
+export type GpsFix = {
+  latitude: number;
+  longitude: number;
+  accuracy_m: number | null;
+};
+
+/** How the backend resolved a GPS fix against city and parking-zone boundaries. */
+export type LocationContext = {
+  city: string | null;
+  city_name_he: string | null;
+  city_certain: boolean;
+  zone: string | null;
+  zone_certain: boolean;
+  accuracy_m: number | null;
+};
+
 export type AnalyzeParkingRequest = {
   sign_data: ParkingSignData;
   current_time: string; // ISO 8601
   profile: UserProfile;
-  city?: string | null;
+  location?: GpsFix | null;
 };
 
 export type ParkingStatus = 'green' | 'orange' | 'red' | 'unknown';
@@ -72,9 +90,12 @@ export type ReasonCode =
   | 'partial_sign'
   | 'nothing_detected'
   | 'paid_hours_unknown'
+  | 'unsupported_condition'
   | 'paid_rate_unknown'
   | 'max_duration_unknown'
-  | 'resident_city_unknown';
+  | 'location_uncertain'
+  | 'zone_mismatch'
+  | 'local_zone_unknown';
 
 export type PermittedBy = 'disabled_permit' | 'resident_permit' | 'commercial_vehicle';
 
@@ -107,4 +128,5 @@ export type ParkingDecision = {
   next_change: UpcomingChange | null;
   reasons: Reason[];
   warnings: Reason[];
+  location: LocationContext | null;
 };

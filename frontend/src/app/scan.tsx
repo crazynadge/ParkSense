@@ -5,9 +5,11 @@ import { ActivityIndicator, Image, Linking, Pressable, StyleSheet, Text, View } 
 
 import { ApiError, scanSign } from '@/api/client';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { LocationPill } from '@/components/LocationPill';
 import { SignCamera } from '@/components/SignCamera';
+import { useDeviceLocation } from '@/hooks/useDeviceLocation';
 import { API_ERROR_TEXT } from '@/i18n/he';
-import { DEMO_CITY, DEMO_PROFILE } from '@/state/profile';
+import { DEMO_PROFILE } from '@/state/profile';
 import { useScanResult } from '@/state/scan-result';
 import { colors } from '@/theme/colors';
 import { prepareForUpload, type PreparedImage } from '@/utils/image';
@@ -19,17 +21,21 @@ export default function ScanScreen() {
   const { setDecision } = useScanResult();
   const [processingUri, setProcessingUri] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Start locating as soon as the camera is up, so a fix is ready at the shutter.
+  const location = useDeviceLocation(isFocused && permission?.granted === true);
 
   async function handleCapture(photo: PreparedImage) {
     setProcessingUri(photo.uri);
     setError(null);
     try {
-      const image = await prepareForUpload(photo);
+      // Resize and location lookup run in parallel; a scan without GPS still works,
+      // it just cannot verify resident permits.
+      const [image, fix] = await Promise.all([prepareForUpload(photo), location.getFix(3_000)]);
       const decision = await scanSign({
         imageUri: image.uri,
         currentTime: new Date().toISOString(),
         profile: DEMO_PROFILE,
-        city: DEMO_CITY,
+        location: fix,
       });
       setDecision(decision);
       router.push('/result');
@@ -71,7 +77,14 @@ export default function ScanScreen() {
   return (
     <View style={styles.cameraScreen}>
       {/* Only one camera preview may be active; release it while another screen is on top. */}
-      {isFocused && <SignCamera onCapture={handleCapture} onError={setError} disabled={processingUri !== null} />}
+      {isFocused && (
+        <SignCamera
+          onCapture={handleCapture}
+          onError={setError}
+          disabled={processingUri !== null}
+          accessory={<LocationPill status={location.status} accuracy={location.accuracy} />}
+        />
+      )}
 
       {processingUri && (
         <View style={StyleSheet.absoluteFill}>

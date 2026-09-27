@@ -14,9 +14,14 @@ backend/    FastAPI server
 
 ## Backend
 
+Requires Python 3.10+ (3.12 recommended). On macOS 26.0.x, Homebrew's `python@3.12`
+has a broken `pyexpat`; use [uv](https://docs.astral.sh/uv/)'s standalone Python instead.
+
 ```bash
 cd backend
-python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+uv venv --python 3.12 --python-preference only-managed .venv
+uv pip install --python .venv/bin/python -r requirements-dev.txt
+cp .env.example .env    # then paste your GEMINI_API_KEY
 .venv/bin/pytest
 .venv/bin/uvicorn app.main:app --reload --host 0.0.0.0
 # Rule engine only, with pre-extracted sign data:
@@ -24,11 +29,37 @@ curl -X POST localhost:8000/api/v1/analyze-parking \
   -H 'Content-Type: application/json' -d @examples/tel_aviv_visitor_weekday.json
 # Full pipeline, photo -> Vision (mock for now) -> rule engine:
 curl -X POST localhost:8000/api/v1/scan -F image=@sign.jpg \
-  -F current_time=2026-09-28T10:00:00+03:00 -F city="Tel Aviv" \
+  -F current_time=2026-09-28T10:00:00+03:00 -F latitude=32.0753 -F longitude=34.7747 -F accuracy_m=10 \
   -F 'profile={"vehicle_type":"private","resident_permits":[],"has_disabled_permit":false}'
 ```
 
 Interactive docs: http://localhost:8000/docs
+
+**Vision:** `VISION_PROVIDER=gemini` (default) calls Gemini Flash; the server refuses to start
+without `GEMINI_API_KEY`. `VISION_PROVIDER=mock` returns a fixed, fabricated sign for offline
+work. `/health` reports which one is active. To see what Gemini reads from real photos:
+
+```bash
+.venv/bin/python -m scripts.try_vision photo.jpg --lat 32.0753 --lon 34.7747 [--permit "Tel Aviv:9"]
+```
+
+**Location:** the app sends the device's GPS fix with each scan. `app/geo` resolves it by
+point-in-polygon against `app/geo/data/geo.json` to a city and resident parking zone, and marks
+each *certain* only if the whole GPS error circle lies inside it (so boundary streets are
+reported as uncertain, never guessed). The rule engine then cross-checks: resident permits need
+a certain city; a sign zone that contradicts a certain GPS zone is treated as a possible misread;
+"local residents" signs without a zone number take the zone from GPS.
+
+Boundary data: Tel Aviv-Yafo city boundary and parking zones from the municipality GIS
+(layers 890, 544); neighbouring cities from © OpenStreetMap contributors (ODbL). Rebuild with:
+
+```bash
+.venv/bin/python -m scripts.build_geo_data
+```
+
+Gemini only transcribes the sign into JSON. Anything malformed or self-contradictory becomes
+`unknown`, and conditions the schema cannot express (e.g. holiday eves) are surfaced as
+`unsupported_condition` instead of being dropped.
 
 ## Frontend
 

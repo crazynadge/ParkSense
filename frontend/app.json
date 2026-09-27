@@ -39,6 +39,12 @@
           "recordAudioAndroid": false,
           "barcodeScannerEnabled": false
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "האפליקציה משתמשת במיקום כדי לזהות את העיר ואזור החניה שבהם אתם נמצאים, ולבדוק אם תו האזור שלכם תקף כאן."
+        }
       ]
     ],
     "scheme": "parksense",

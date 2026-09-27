@@ -7,6 +7,7 @@ from app.rule_engine.policy import DEFAULT_TIMEZONE
 from app.schemas import (
     CostType,
     CurbMarking,
+    LocationContext,
     ParkingRule,
     ParkingSignData,
     ParkingStatus,
@@ -61,6 +62,17 @@ def tel_aviv_sign() -> ParkingSignData:
     )
 
 
+def location(city="Tel Aviv", zone=None, city_certain=True, zone_certain=True):
+    return LocationContext(
+        city=city, city_certain=city_certain, zone=zone, zone_certain=zone is not None and zone_certain
+    )
+
+
+IN_TLV_ZONE_2 = location(zone="2")
+IN_TLV_ZONE_4 = location(zone="4")
+IN_GIVATAYIM = location(city="Givatayim")
+UNCERTAIN = location(city="Tel Aviv", zone="2", city_certain=False, zone_certain=False)
+
 VISITOR = UserProfile()
 RESIDENT = UserProfile(resident_permits=[ResidentPermit(city="Tel Aviv", zone="2")])
 OTHER_ZONE_RESIDENT = UserProfile(resident_permits=[ResidentPermit(city="Tel Aviv", zone="5")])
@@ -69,7 +81,7 @@ DISABLED = UserProfile(has_disabled_permit=True)
 
 class TestPaidAndResidentZones:
     def test_visitor_during_paid_hours_is_orange_until_residents_only(self):
-        d = evaluate(tel_aviv_sign(), at("mon", "10:00"), VISITOR, city="Tel Aviv")
+        d = evaluate(tel_aviv_sign(), at("mon", "10:00"), VISITOR, location=IN_TLV_ZONE_2)
         assert d.status == ParkingStatus.ORANGE
         assert d.cost.type == CostType.PAID
         assert d.cost.price_per_hour == 6.3
@@ -81,7 +93,7 @@ class TestPaidAndResidentZones:
         assert d.next_change.reasons[0].permitted_by is None
 
     def test_resident_is_exempt_all_day(self):
-        d = evaluate(tel_aviv_sign(), at("mon", "10:00"), RESIDENT, city="Tel Aviv")
+        d = evaluate(tel_aviv_sign(), at("mon", "10:00"), RESIDENT, location=IN_TLV_ZONE_2)
         assert d.status == ParkingStatus.GREEN
         assert d.cost.type == CostType.EXEMPT
         assert d.allowed_until is None
@@ -91,20 +103,21 @@ class TestPaidAndResidentZones:
         assert reason.params == {"city": "Tel Aviv", "zone": "2"}
 
     def test_resident_of_other_zone_is_not_exempt(self):
-        d = evaluate(tel_aviv_sign(), at("mon", "21:00"), OTHER_ZONE_RESIDENT, city="Tel Aviv")
+        d = evaluate(tel_aviv_sign(), at("mon", "21:00"), OTHER_ZONE_RESIDENT, location=IN_TLV_ZONE_2)
         assert d.status == ParkingStatus.RED
 
     def test_same_zone_in_another_city_does_not_match(self):
-        d = evaluate(tel_aviv_sign(), at("mon", "21:00"), RESIDENT, city="Givatayim")
+        d = evaluate(tel_aviv_sign(), at("mon", "21:00"), RESIDENT, location=IN_GIVATAYIM)
         assert d.status == ParkingStatus.RED
 
-    def test_unknown_city_does_not_apply_exemption_and_warns(self):
-        d = evaluate(tel_aviv_sign(), at("mon", "10:00"), RESIDENT, city=None)
+    def test_unknown_location_means_pay_to_be_safe(self):
+        d = evaluate(tel_aviv_sign(), at("mon", "10:00"), RESIDENT, location=None)
         assert d.status == ParkingStatus.ORANGE
-        assert [(w.code, w.params) for w in d.warnings] == [(ReasonCode.RESIDENT_CITY_UNKNOWN, {"zone": "2"})]
+        assert d.cost.type == CostType.PAID
+        assert [(w.code, w.params) for w in d.warnings] == [(ReasonCode.LOCATION_UNCERTAIN, {"zone": "2"})]
 
     def test_visitor_at_night_is_red_until_morning(self):
-        d = evaluate(tel_aviv_sign(), at("mon", "23:00"), VISITOR, city="Tel Aviv")
+        d = evaluate(tel_aviv_sign(), at("mon", "23:00"), VISITOR, location=IN_TLV_ZONE_2)
         assert d.status == ParkingStatus.RED
         assert d.allowed_until is None
         # Residents-only ends 07:00, a free hour, then paid from 08:00.
@@ -112,11 +125,11 @@ class TestPaidAndResidentZones:
         assert d.next_change.status == ParkingStatus.GREEN
 
     def test_overnight_window_started_previous_day_is_active_after_midnight(self):
-        d = evaluate(tel_aviv_sign(), at("tue", "02:00"), VISITOR, city="Tel Aviv")
+        d = evaluate(tel_aviv_sign(), at("tue", "02:00"), VISITOR, location=IN_TLV_ZONE_2)
         assert d.status == ParkingStatus.RED
 
     def test_friday_afternoon_is_free_through_the_weekend(self):
-        d = evaluate(tel_aviv_sign(), at("fri", "14:00"), VISITOR, city="Tel Aviv")
+        d = evaluate(tel_aviv_sign(), at("fri", "14:00"), VISITOR, location=IN_TLV_ZONE_2)
         assert d.status == ParkingStatus.GREEN
         assert d.cost.type == CostType.FREE
         # Sunday 08:00 becomes paid (orange), Sunday 19:00 becomes residents-only (red).
@@ -125,7 +138,7 @@ class TestPaidAndResidentZones:
 
     def test_disabled_permit_exempt_from_paid_and_residents_only(self):
         for t in (at("mon", "10:00"), at("mon", "22:00")):
-            d = evaluate(tel_aviv_sign(), t, DISABLED, city="Tel Aviv")
+            d = evaluate(tel_aviv_sign(), t, DISABLED, location=IN_TLV_ZONE_2)
             assert d.status == ParkingStatus.GREEN
             assert d.cost.type == CostType.EXEMPT
 
@@ -253,12 +266,107 @@ class TestFallback:
 
 class TestDeterminism:
     def test_naive_time_is_treated_as_israel_local(self):
-        naive = evaluate(tel_aviv_sign(), datetime(2026, 9, 28, 10, 0), VISITOR, city="Tel Aviv")
-        aware = evaluate(tel_aviv_sign(), at("mon", "10:00"), VISITOR, city="Tel Aviv")
+        naive = evaluate(tel_aviv_sign(), datetime(2026, 9, 28, 10, 0), VISITOR, location=IN_TLV_ZONE_2)
+        aware = evaluate(tel_aviv_sign(), at("mon", "10:00"), VISITOR, location=IN_TLV_ZONE_2)
         assert naive == aware
 
     def test_utc_input_is_converted(self):
         utc = datetime(2026, 9, 28, 7, 0, tzinfo=timezone.utc)  # 10:00 in Israel (IDT, UTC+3)
-        d = evaluate(tel_aviv_sign(), utc, VISITOR, city="Tel Aviv")
+        d = evaluate(tel_aviv_sign(), utc, VISITOR, location=IN_TLV_ZONE_2)
         assert d.evaluated_at == at("mon", "10:00")
         assert d.status == ParkingStatus.ORANGE
+
+
+class TestLocationCrossReference:
+    """GPS city/zone combined with the zones read from the sign."""
+
+    def test_resident_in_own_zone_is_exempt(self):
+        d = evaluate(tel_aviv_sign(), at("mon", "21:00"), RESIDENT, location=IN_TLV_ZONE_2)
+        assert d.status == ParkingStatus.GREEN
+        assert d.location == IN_TLV_ZONE_2
+
+    def test_sign_zone_contradicting_gps_zone_is_not_trusted_at_residents_only_hours(self):
+        # Sign read as "zone 2", but GPS is certain we stand in zone 4: possible misread.
+        d = evaluate(tel_aviv_sign(), at("mon", "21:00"), RESIDENT, location=IN_TLV_ZONE_4)
+        assert d.status == ParkingStatus.UNKNOWN
+        assert d.cost.type == CostType.UNKNOWN
+        [reason] = d.reasons
+        assert reason.code == ReasonCode.ZONE_MISMATCH
+        assert reason.params == {"sign_zone": "2", "gps_zone": "4"}
+
+    def test_zone_contradiction_during_paid_hours_means_pay(self):
+        d = evaluate(tel_aviv_sign(), at("mon", "10:00"), RESIDENT, location=IN_TLV_ZONE_4)
+        assert d.status == ParkingStatus.ORANGE
+        assert d.cost.type == CostType.PAID
+        assert [w.code for w in d.warnings] == [ReasonCode.ZONE_MISMATCH]
+        # Certain until residents-only hours begin, which are then undeterminable.
+        assert d.allowed_until == at("mon", "19:00")
+        assert d.next_change.status == ParkingStatus.UNKNOWN
+
+    def test_contradiction_does_not_affect_visitors(self):
+        d = evaluate(tel_aviv_sign(), at("mon", "21:00"), VISITOR, location=IN_TLV_ZONE_4)
+        assert d.status == ParkingStatus.RED
+        assert d.warnings == []
+
+    def test_uncertain_location_at_residents_only_hours_is_unknown(self):
+        d = evaluate(tel_aviv_sign(), at("mon", "21:00"), RESIDENT, location=UNCERTAIN)
+        assert d.status == ParkingStatus.UNKNOWN
+        assert d.reasons[0].code == ReasonCode.LOCATION_UNCERTAIN
+
+    def test_missing_location_at_residents_only_hours_is_unknown(self):
+        d = evaluate(tel_aviv_sign(), at("mon", "21:00"), RESIDENT, location=None)
+        assert d.status == ParkingStatus.UNKNOWN
+
+    def test_uncertain_zone_skips_cross_check_but_city_still_verified(self):
+        # City certain, zone ambiguous (e.g. boundary street): the sign's zone is used as printed.
+        near_boundary = location(zone="4", zone_certain=False)
+        d = evaluate(tel_aviv_sign(), at("mon", "21:00"), RESIDENT, location=near_boundary)
+        assert d.status == ParkingStatus.GREEN
+
+    def test_permit_from_another_city_never_matches(self):
+        givatayim_zone_2 = UserProfile(resident_permits=[ResidentPermit(city="Givatayim", zone="2")])
+        d = evaluate(tel_aviv_sign(), at("mon", "21:00"), givatayim_zone_2, location=IN_TLV_ZONE_2)
+        assert d.status == ParkingStatus.RED
+
+    def test_sign_that_names_its_city_does_not_need_gps(self):
+        s = sign(
+            ParkingRule(
+                rule_type=RuleType.RESIDENTS_ONLY, exempt_resident_zones=[ResidentZone(city="Tel Aviv", zone="2")]
+            )
+        )
+        assert evaluate(s, at("mon", "21:00"), RESIDENT, location=None).status == ParkingStatus.GREEN
+
+    def test_no_stopping_outranks_undeterminable_permit(self):
+        s = tel_aviv_sign()
+        s.rules.append(ParkingRule(rule_type=RuleType.NO_STOPPING, windows=[TimeWindow(start="20:00", end="22:00")]))
+        assert evaluate(s, at("mon", "21:00"), RESIDENT, location=UNCERTAIN).status == ParkingStatus.RED
+
+
+class TestLocalZoneSigns:
+    """Signs like "לתושבי האזור" that do not print a zone number: the zone comes from GPS."""
+
+    @staticmethod
+    def local_sign():
+        return sign(ParkingRule(rule_type=RuleType.RESIDENTS_ONLY, exempt_local_zone=True))
+
+    def test_resident_standing_in_own_zone(self):
+        d = evaluate(self.local_sign(), at("mon", "21:00"), RESIDENT, location=IN_TLV_ZONE_2)
+        assert d.status == ParkingStatus.GREEN
+        assert d.reasons[0].params == {"city": "Tel Aviv", "zone": "2"}
+
+    def test_resident_standing_in_another_zone(self):
+        d = evaluate(self.local_sign(), at("mon", "21:00"), RESIDENT, location=IN_TLV_ZONE_4)
+        assert d.status == ParkingStatus.RED
+
+    def test_zone_not_certain(self):
+        d = evaluate(self.local_sign(), at("mon", "21:00"), RESIDENT, location=UNCERTAIN)
+        assert d.status == ParkingStatus.UNKNOWN
+        assert d.reasons[0].code == ReasonCode.LOCAL_ZONE_UNKNOWN
+
+    def test_permit_for_another_city_is_not_undetermined(self):
+        # We know we are in Tel Aviv, so a Givatayim permit cannot apply whatever the zone.
+        givatayim = UserProfile(resident_permits=[ResidentPermit(city="Givatayim", zone="2")])
+        in_tlv_zone_unknown = location(zone="2", zone_certain=False)
+        assert evaluate(self.local_sign(), at("mon", "21:00"), givatayim, location=in_tlv_zone_unknown).status == (
+            ParkingStatus.RED
+        )

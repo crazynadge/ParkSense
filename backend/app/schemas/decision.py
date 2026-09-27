@@ -4,6 +4,8 @@ from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from app.schemas.location import LocationContext
+
 
 class ReasonCode(str, Enum):
     """Stable, language-neutral codes. Clients localize these; never parse `message`."""
@@ -24,10 +26,14 @@ class ReasonCode(str, Enum):
     PARTIAL_SIGN = "partial_sign"  # params: fields (comma-separated)
     NOTHING_DETECTED = "nothing_detected"
     PAID_HOURS_UNKNOWN = "paid_hours_unknown"
+    UNSUPPORTED_CONDITION = "unsupported_condition"  # params: conditions (" | "-separated)
     # Warnings
     PAID_RATE_UNKNOWN = "paid_rate_unknown"
     MAX_DURATION_UNKNOWN = "max_duration_unknown"
-    RESIDENT_CITY_UNKNOWN = "resident_city_unknown"  # params: zone
+    # Location cross-reference (resident permits)
+    LOCATION_UNCERTAIN = "location_uncertain"  # params: zone
+    ZONE_MISMATCH = "zone_mismatch"  # params: sign_zone, gps_zone
+    LOCAL_ZONE_UNKNOWN = "local_zone_unknown"
 
 
 class PermittedBy(str, Enum):
@@ -85,3 +91,4 @@ class ParkingDecision(BaseModel):
     )
     reasons: List[Reason] = Field(default_factory=list)
     warnings: List[Reason] = Field(default_factory=list)
+    location: Optional[LocationContext] = Field(None, description="How the GPS fix was resolved, for display.")

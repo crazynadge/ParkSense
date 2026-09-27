@@ -1,6 +1,10 @@
 {
   "current_time": "2026-09-28T10:00:00+03:00",
-  "city": "Tel Aviv",
+  "location": {
+    "latitude": 32.049083,
+    "longitude": 34.774115,
+    "accuracy_m": 12
+  },
   "profile": {
     "vehicle_type": "private",
     "resident_permits": [],
@@ -15,19 +19,53 @@
       {
         "rule_type": "paid",
         "windows": [
-          { "days": ["sun", "mon", "tue", "wed", "thu"], "start": "08:00", "end": "19:00" },
-          { "days": ["fri"], "start": "08:00", "end": "13:00" }
+          {
+            "days": [
+              "sun",
+              "mon",
+              "tue",
+              "wed",
+              "thu"
+            ],
+            "start": "08:00",
+            "end": "19:00"
+          },
+          {
+            "days": [
+              "fri"
+            ],
+            "start": "08:00",
+            "end": "13:00"
+          }
         ],
         "price_per_hour": 6.3,
-        "exempt_resident_zones": [{ "zone": "2" }],
+        "exempt_resident_zones": [
+          {
+            "zone": "2"
+          }
+        ],
         "raw_text": "חניה בתשלום א'-ה' 08:00-19:00, ו' 08:00-13:00. פטור לתושבי אזור 2"
       },
       {
         "rule_type": "residents_only",
         "windows": [
-          { "days": ["sun", "mon", "tue", "wed", "thu"], "start": "19:00", "end": "07:00" }
+          {
+            "days": [
+              "sun",
+              "mon",
+              "tue",
+              "wed",
+              "thu"
+            ],
+            "start": "19:00",
+            "end": "07:00"
+          }
         ],
-        "exempt_resident_zones": [{ "zone": "2" }],
+        "exempt_resident_zones": [
+          {
+            "zone": "2"
+          }
+        ],
         "raw_text": "א'-ה' 19:00-07:00 לבעלי תו אזור 2 בלבד"
       }
     ]

@@ -8,6 +8,7 @@ from app.schemas.decision import (
     ReasonCode,
     UpcomingChange,
 )
+from app.schemas.location import GpsFix, LocationContext
 from app.schemas.profile import ResidentPermit, UserProfile, VehicleType
 from app.schemas.sign import (
     CurbMarking,
@@ -23,6 +24,8 @@ __all__ = [
     "CostInfo",
     "CostType",
     "CurbMarking",
+    "GpsFix",
+    "LocationContext",
     "ParkingDecision",
     "ParkingRule",
     "ParkingSignData",

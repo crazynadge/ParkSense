@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-import type { AnalyzeParkingRequest, ParkingDecision, UserProfile } from './types';
+import type { AnalyzeParkingRequest, GpsFix, ParkingDecision, UserProfile } from './types';
 
 const JSON_TIMEOUT_MS = 10_000;
 // Uploads include the photo, so allow more time on a weak cellular connection.
@@ -20,7 +20,7 @@ function resolveBaseUrl(): string {
 
 export const API_BASE_URL = resolveBaseUrl();
 
-export type ApiErrorKind = 'network' | 'timeout' | 'server';
+export type ApiErrorKind = 'network' | 'timeout' | 'server' | 'unavailable';
 
 export class ApiError extends Error {
   constructor(
@@ -50,7 +50,9 @@ async function post<T>(path: string, init: RequestInit, timeoutMs: number): Prom
   }
 
   if (!response.ok) {
-    throw new ApiError('server', `HTTP ${response.status}: ${await response.text()}`, response.status);
+    // 503: the Vision provider is down or overloaded; the photo itself was fine.
+    const kind = response.status === 503 ? 'unavailable' : 'server';
+    throw new ApiError(kind, `HTTP ${response.status}: ${await response.text()}`, response.status);
   }
   return (await response.json()) as T;
 }
@@ -68,11 +70,11 @@ export type ScanRequest = {
   imageUri: string; // JPEG
   currentTime: string; // ISO 8601
   profile: UserProfile;
-  city?: string | null;
+  location: GpsFix | null;
 };
 
 /** Full pipeline: photo -> Vision extraction -> rule engine. */
-export async function scanSign({ imageUri, currentTime, profile, city }: ScanRequest): Promise<ParkingDecision> {
+export async function scanSign({ imageUri, currentTime, profile, location }: ScanRequest): Promise<ParkingDecision> {
   const form = new FormData();
   if (Platform.OS === 'web') {
     // On web the image URI is a blob:/data: URL; upload the bytes with an explicit type.
@@ -84,7 +86,11 @@ export async function scanSign({ imageUri, currentTime, profile, city }: ScanReq
   }
   form.append('current_time', currentTime);
   form.append('profile', JSON.stringify(profile));
-  if (city) form.append('city', city);
+  if (location) {
+    form.append('latitude', String(location.latitude));
+    form.append('longitude', String(location.longitude));
+    if (location.accuracy_m != null) form.append('accuracy_m', String(location.accuracy_m));
+  }
 
   // No Content-Type header: fetch sets multipart/form-data with the boundary itself.
   return post<ParkingDecision>('/api/v1/scan', { body: form }, UPLOAD_TIMEOUT_MS);

@@ -10,7 +10,7 @@ EXAMPLES = Path(__file__).parent.parent / "examples"
 
 
 def test_health():
-    assert client.get("/health").json() == {"status": "ok"}
+    assert client.get("/health").json() == {"status": "ok", "vision_provider": "mock"}
 
 
 def test_analyze_parking_example_request():

@@ -1,5 +1,5 @@
 import { CameraView } from 'expo-camera';
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { PreparedImage } from '@/utils/image';
@@ -8,10 +8,12 @@ type Props = {
   onCapture: (photo: PreparedImage) => void;
   onError: (message: string) => void;
   disabled?: boolean;
+  /** Shown beside the shutter, e.g. a location status indicator. */
+  accessory?: ReactNode;
 };
 
 /** Camera preview with a framing guide, torch toggle and shutter. */
-export function SignCamera({ onCapture, onError, disabled }: Props) {
+export function SignCamera({ onCapture, onError, disabled, accessory }: Props) {
   const cameraRef = useRef<CameraView>(null);
   const [ready, setReady] = useState(false);
   const [torch, setTorch] = useState(false);
@@ -74,7 +76,7 @@ export function SignCamera({ onCapture, onError, disabled }: Props) {
             <View style={styles.shutterInner} />
           </Pressable>
         </View>
-        <View style={styles.slot} />
+        <View style={styles.slot}>{accessory}</View>
       </View>
     </View>
   );

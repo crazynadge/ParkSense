@@ -18,14 +18,15 @@ from app.schemas.sign import (
 
 
 class SignExtractor(Protocol):
-    async def extract(self, image: bytes) -> ParkingSignData:
+    async def extract(self, image: bytes, mime_type: str = "image/jpeg") -> ParkingSignData:
+        """Raises VisionUnavailableError when the provider cannot be reached."""
         ...
 
 
 class MockSignExtractor:
     """Returns a fixed, typical Tel Aviv blue-white sign regardless of the image."""
 
-    async def extract(self, image: bytes) -> ParkingSignData:
+    async def extract(self, image: bytes, mime_type: str = "image/jpeg") -> ParkingSignData:
         weekdays = [Weekday.SUN, Weekday.MON, Weekday.TUE, Weekday.WED, Weekday.THU]
         return ParkingSignData(
             sign_detected=True,

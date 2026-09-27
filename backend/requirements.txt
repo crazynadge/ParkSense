@@ -3,3 +3,6 @@ uvicorn[standard]>=0.29
 pydantic>=2.6
 tzdata>=2024.1
 python-multipart>=0.0.9
+google-genai>=2.25
+python-dotenv>=1.0
+shapely>=2.0

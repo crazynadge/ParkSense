@@ -1,12 +1,13 @@
-import { useRouter } from 'expo-router';
+import { useIsFocused, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { analyzeParking, ApiError } from '@/api/client';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { useDeviceLocation } from '@/hooks/useDeviceLocation';
 import { API_ERROR_TEXT } from '@/i18n/he';
 import { SIGN_SCENARIOS } from '@/mocks/sign-scenarios';
-import { DEMO_CITY, DEMO_PROFILE } from '@/state/profile';
+import { DEMO_PROFILE } from '@/state/profile';
 import { useScanResult } from '@/state/scan-result';
 import { colors } from '@/theme/colors';
 
@@ -18,6 +19,7 @@ export default function DevScenariosScreen() {
   const [scenarioId, setScenarioId] = useState(SIGN_SCENARIOS[0].id);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const location = useDeviceLocation(useIsFocused());
 
   async function analyze() {
     const scenario = SIGN_SCENARIOS.find((s) => s.id === scenarioId) ?? SIGN_SCENARIOS[0];
@@ -28,7 +30,7 @@ export default function DevScenariosScreen() {
         sign_data: scenario.signData,
         current_time: new Date().toISOString(),
         profile: DEMO_PROFILE,
-        city: DEMO_CITY,
+        location: await location.getFix(3_000),
       });
       setDecision(decision);
       router.push('/result');

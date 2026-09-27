@@ -1,7 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
 
-import { cityLabel } from '@/i18n/he';
-import { DEMO_CITY } from '@/state/profile';
 import { colors } from '@/theme/colors';
 
 // Placeholder: vehicle type, resident permits and disabled permit will be edited here.
@@ -10,7 +8,8 @@ export default function ProfileScreen() {
     <View style={styles.container}>
       <Text style={styles.text}>כאן יוגדרו סוג הרכב, תווי חניה לתושבים ותו נכה.</Text>
       <Text style={styles.text}>
-        כרגע הסריקות משתמשות בפרופיל לדוגמה: רכב פרטי, ללא תווים, בעיר {cityLabel(DEMO_CITY)}.
+        כרגע הסריקות משתמשות בפרופיל לדוגמה: רכב פרטי, ללא תווים. העיר ואזור החניה נקבעים לפי מיקום
+        המכשיר.
       </Text>
     </View>
   );

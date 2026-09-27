@@ -1,11 +1,11 @@
 """Deterministic parking rule engine.
 
-Pure function of (sign data, time, user profile, city): same input -> same output.
+Pure function of (sign data, time, user profile, resolved location): same input -> same output.
 No I/O, no AI calls, no randomness.
 """
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 from app.rule_engine.intervals import Interval, interval_containing, rule_intervals
 from app.rule_engine.policy import (
@@ -24,10 +24,13 @@ from app.schemas.decision import (
     ReasonCode,
     UpcomingChange,
 )
+from app.schemas.location import LocationContext
 from app.schemas.profile import UserProfile, VehicleType
 from app.schemas.sign import CurbMarking, ParkingRule, ParkingSignData, RuleType
 
-_SEVERITY = {ParkingStatus.GREEN: 0, ParkingStatus.ORANGE: 1, ParkingStatus.RED: 2}
+# A rule that forbids parking for everyone outranks one we cannot determine for this user.
+_SEVERITY = {ParkingStatus.GREEN: 0, ParkingStatus.ORANGE: 1, ParkingStatus.UNKNOWN: 2, ParkingStatus.RED: 3}
+_NOT_ALLOWED = (ParkingStatus.RED, ParkingStatus.UNKNOWN)
 
 _SUMMARIES = {
     ParkingStatus.GREEN: "Parking allowed",
@@ -62,6 +65,13 @@ class _Exemption:
     params: Dict[str, str]
 
 
+@dataclass(frozen=True)
+class _Undetermined:
+    """Whether the user's permit applies cannot be established from the location we have."""
+
+    reason: Reason
+
+
 _FREE = CostInfo(type=CostType.FREE)
 _EXEMPT = CostInfo(type=CostType.EXEMPT)
 
@@ -79,47 +89,49 @@ def evaluate(
     sign: ParkingSignData,
     now: datetime,
     profile: UserProfile,
-    city: Optional[str] = None,
+    location: Optional[LocationContext] = None,
 ) -> ParkingDecision:
     """Decide whether `profile` may park at the scanned spot at `now`.
 
-    `now` without tzinfo is interpreted in Israel local time. `city` (from GPS) resolves
-    resident-zone exemptions on signs that don't name a city.
+    `now` without tzinfo is interpreted in Israel local time. `location` (the resolved GPS
+    fix) supplies the city and zone for resident permits and cross-checks the zone read
+    from the sign.
     """
     now = now.replace(tzinfo=DEFAULT_TIMEZONE) if now.tzinfo is None else now.astimezone(DEFAULT_TIMEZONE)
 
     if sign.curb_marking == CurbMarking.RED_WHITE:
         # Decisive on its own and the conservative answer, even if the sign is unreadable.
         reason = _reason(ReasonCode.RED_WHITE_CURB, "Red-white curb: no stopping at any time")
-        return _decision(now, _Snapshot(ParkingStatus.RED, _FREE, [reason]))
+        return _decision(now, _Snapshot(ParkingStatus.RED, _FREE, [reason]), location=location)
 
     unknown_reason = _insufficient_input(sign)
     if unknown_reason:
-        return _decision(now, _Snapshot(ParkingStatus.UNKNOWN, CostInfo(type=CostType.UNKNOWN), [unknown_reason]))
+        snapshot = _Snapshot(ParkingStatus.UNKNOWN, CostInfo(type=CostType.UNKNOWN), [unknown_reason])
+        return _decision(now, snapshot, location=location)
 
     horizon_end = now + timedelta(days=LOOKAHEAD_DAYS)
     schedule = [(rule, rule_intervals(rule, now, horizon_end)) for rule in sign.rules]
 
-    current = _snapshot_at(now, schedule, profile, city)
+    current = _snapshot_at(now, schedule, profile, location)
     boundaries = sorted({b for _, ivs in schedule for iv in ivs for b in iv if now < b < horizon_end})
 
     allowed_until: Optional[datetime] = None
     next_change: Optional[UpcomingChange] = None
     for boundary in boundaries:
-        later = _snapshot_at(boundary, schedule, profile, city)
+        later = _snapshot_at(boundary, schedule, profile, location)
         if next_change is None and (later.status, later.cost) != (current.status, current.cost):
             next_change = UpcomingChange(at=boundary, status=later.status, reasons=later.reasons)
-        if current.status == ParkingStatus.RED:
+        if current.status in _NOT_ALLOWED:
             if next_change is not None:
                 break
-        elif later.status == ParkingStatus.RED:
+        elif later.status in _NOT_ALLOWED:
             allowed_until = boundary
             break
 
     if current.duration_deadline and (allowed_until is None or current.duration_deadline < allowed_until):
         allowed_until = current.duration_deadline
 
-    return _decision(now, current, allowed_until, next_change)
+    return _decision(now, current, allowed_until, next_change, location)
 
 
 def _insufficient_input(sign: ParkingSignData) -> Optional[Reason]:
@@ -131,6 +143,12 @@ def _insufficient_input(sign: ParkingSignData) -> Optional[Reason]:
     if sign.unreadable_fields:
         fields = ",".join(sign.unreadable_fields)
         return _reason(ReasonCode.PARTIAL_SIGN, "Parts of the sign could not be read", params={"fields": fields})
+    if sign.unsupported_conditions:
+        return _reason(
+            ReasonCode.UNSUPPORTED_CONDITION,
+            "The sign has conditions the engine cannot evaluate",
+            params={"conditions": " | ".join(sign.unsupported_conditions)},
+        )
     if not sign.sign_detected and sign.curb_marking == CurbMarking.UNKNOWN:
         return _reason(ReasonCode.NOTHING_DETECTED, "No sign or curb marking detected")
     if sign.curb_marking == CurbMarking.BLUE_WHITE and not sign.rules:
@@ -142,14 +160,14 @@ def _snapshot_at(
     t: datetime,
     schedule: List[Tuple[ParkingRule, List[Interval]]],
     profile: UserProfile,
-    city: Optional[str],
+    location: Optional[LocationContext],
 ) -> _Snapshot:
     active: List[Tuple[_RuleOutcome, Interval]] = []
     warnings: List[Reason] = []
     for rule, intervals in schedule:
         interval = interval_containing(intervals, t)
         if interval is not None:
-            outcome, rule_warnings = _rule_outcome(rule, profile, city)
+            outcome, rule_warnings = _rule_outcome(rule, profile, location)
             active.append((outcome, interval))
             warnings.extend(rule_warnings)
 
@@ -158,7 +176,8 @@ def _snapshot_at(
 
     status = max((o.status for o, _ in active), key=_SEVERITY.__getitem__)
     reasons = [o.reason for o, _ in active]
-    snapshot = _Snapshot(status, _combine_costs([o.cost for o, _ in active]), reasons, warnings=warnings)
+    cost = CostInfo(type=CostType.UNKNOWN) if status == ParkingStatus.UNKNOWN else _combine_costs([o.cost for o, _ in active])
+    snapshot = _Snapshot(status, cost, reasons, warnings=warnings)
 
     for outcome, (_, interval_end) in active:
         if outcome.max_duration_minutes is None:
@@ -170,7 +189,9 @@ def _snapshot_at(
     return snapshot
 
 
-def _rule_outcome(rule: ParkingRule, profile: UserProfile, city: Optional[str]) -> Tuple[_RuleOutcome, List[Reason]]:
+def _rule_outcome(
+    rule: ParkingRule, profile: UserProfile, location: Optional[LocationContext]
+) -> Tuple[_RuleOutcome, List[Reason]]:
     """What a single in-force rule means for this particular user."""
     warnings: List[Reason] = []
     rt = rule.rule_type
@@ -191,19 +212,27 @@ def _rule_outcome(rule: ParkingRule, profile: UserProfile, city: Optional[str]) 
             return _RuleOutcome(ParkingStatus.ORANGE, _FREE, reason, rule.max_duration_minutes), warnings
         return _RuleOutcome(red, _FREE, _reason(ReasonCode.LOADING_ZONE, "Loading zone")), warnings
 
-    exemption = _exemption(rule, profile, city, warnings)
+    exemption = _exemption(rule, profile, location)
+    undetermined = exemption.reason if isinstance(exemption, _Undetermined) else None
 
     def exempt(code: ReasonCode, message: str) -> _RuleOutcome:
-        assert exemption is not None
+        assert isinstance(exemption, _Exemption)
         reason = _reason(code, message, exemption.permitted_by, exemption.params)
         return _RuleOutcome(ParkingStatus.GREEN, _EXEMPT, reason)
 
     if rt == RuleType.RESIDENTS_ONLY:
-        if exemption:
+        if isinstance(exemption, _Exemption):
             return exempt(ReasonCode.RESIDENTS_ONLY, "Residents-only parking"), warnings
+        if undetermined:
+            # Neither verdict is safe: "forbidden" may be wrong for a resident, "allowed" may get them towed.
+            return _RuleOutcome(ParkingStatus.UNKNOWN, CostInfo(type=CostType.UNKNOWN), undetermined), warnings
         return _RuleOutcome(red, _FREE, _reason(ReasonCode.RESIDENTS_ONLY, "Residents-only parking")), warnings
+    # For paid and time-limited rules, the non-exempt verdict is always safe (paying or
+    # leaving on time is legal for everyone), so an unverifiable permit only adds a warning.
+    if undetermined:
+        warnings.append(undetermined)
     if rt == RuleType.PAID:
-        if exemption:
+        if isinstance(exemption, _Exemption):
             return exempt(ReasonCode.PAID, "Paid parking"), warnings
         if rule.price_per_hour is None:
             warnings.append(_reason(ReasonCode.PAID_RATE_UNKNOWN, "Hourly rate not printed or not read"))
@@ -211,7 +240,7 @@ def _rule_outcome(rule: ParkingRule, profile: UserProfile, city: Optional[str]) 
         reason = _reason(ReasonCode.PAID, "Paid parking")
         return _RuleOutcome(ParkingStatus.ORANGE, cost, reason, rule.max_duration_minutes), warnings
     if rt == RuleType.TIME_LIMITED:
-        if exemption:
+        if isinstance(exemption, _Exemption):
             return exempt(ReasonCode.TIME_LIMITED, "Time-limited parking"), warnings
         if rule.max_duration_minutes is None:
             warnings.append(_reason(ReasonCode.MAX_DURATION_UNKNOWN, "Maximum duration not read"))
@@ -221,8 +250,14 @@ def _rule_outcome(rule: ParkingRule, profile: UserProfile, city: Optional[str]) 
     raise ValueError("Unhandled rule type: %s" % rt)  # pragma: no cover - enum is exhaustive
 
 
-def _exemption(rule: ParkingRule, profile: UserProfile, city: Optional[str], warnings: List[Reason]) -> Optional[_Exemption]:
-    """The user's exemption from `rule`, if any."""
+def _exemption(
+    rule: ParkingRule, profile: UserProfile, location: Optional[LocationContext]
+) -> Union[_Exemption, _Undetermined, None]:
+    """Is the user exempt from `rule`? Cross-references resident permits with the GPS location.
+
+    Returns an exemption, None (not exempt), or _Undetermined when the answer depends on
+    a location we do not know precisely enough, or when the location contradicts the sign.
+    """
     if profile.has_disabled_permit:
         exempt = rule.exempt_disabled
         if exempt is None:
@@ -230,22 +265,57 @@ def _exemption(rule: ParkingRule, profile: UserProfile, city: Optional[str], war
         if exempt:
             return _Exemption(PermittedBy.DISABLED_PERMIT, {})
 
-    for zone in rule.exempt_resident_zones:
-        zone_city = zone.city or city
-        if zone_city is None:
-            if profile.resident_permits:
-                warnings.append(
-                    _reason(
-                        ReasonCode.RESIDENT_CITY_UNKNOWN,
-                        "Sign exempts a resident zone but the city is unknown; exemption not applied",
-                        params={"zone": zone.zone},
-                    )
+    if not profile.resident_permits or not (rule.exempt_resident_zones or rule.exempt_local_zone):
+        return None  # no permit can apply: nothing depends on the location
+
+    gps_city = location.city if location and location.city_certain else None
+    gps_zone = location.zone if location and location.zone_certain else None
+    printed_zones = {_norm(z.zone) for z in rule.exempt_resident_zones}
+
+    # (city printed on the sign or None, zone, whether the zone comes from GPS)
+    candidates = [(z.city, z.zone, False) for z in rule.exempt_resident_zones]
+    local_zone_unresolved = rule.exempt_local_zone and gps_zone is None
+    if rule.exempt_local_zone and gps_zone is not None:
+        candidates.append((None, gps_zone, True))
+
+    undetermined: Optional[Reason] = None
+    for permit in profile.resident_permits:
+        for sign_city, zone, from_gps in candidates:
+            if _norm(permit.zone) != _norm(zone):
+                continue
+            city = sign_city or gps_city
+            if city is None:
+                undetermined = undetermined or _reason(
+                    ReasonCode.LOCATION_UNCERTAIN,
+                    "Cannot verify which city this sign is in",
+                    params={"zone": zone},
                 )
-            continue
-        for permit in profile.resident_permits:
-            if _norm(permit.city) == _norm(zone_city) and _norm(permit.zone) == _norm(zone.zone):
-                return _Exemption(PermittedBy.RESIDENT_PERMIT, {"city": permit.city, "zone": permit.zone})
-    return None
+                continue
+            if _norm(city) != _norm(permit.city):
+                continue
+            # Cross-check: the zone printed on the sign should be the zone we are standing in.
+            # A contradiction suggests a misread, so the permit is not trusted blindly.
+            if (
+                not from_gps
+                and gps_zone is not None
+                and location is not None
+                and _norm(location.city or "") == _norm(city)
+                and _norm(gps_zone) not in printed_zones
+            ):
+                undetermined = _reason(
+                    ReasonCode.ZONE_MISMATCH,
+                    "Zone read from the sign differs from the GPS zone",
+                    params={"sign_zone": zone, "gps_zone": gps_zone},
+                )
+                continue
+            return _Exemption(PermittedBy.RESIDENT_PERMIT, {"city": permit.city, "zone": permit.zone})
+
+        if local_zone_unresolved and (gps_city is None or _norm(gps_city) == _norm(permit.city)):
+            undetermined = undetermined or _reason(
+                ReasonCode.LOCAL_ZONE_UNKNOWN, "Sign refers to local residents but the zone is not known"
+            )
+
+    return _Undetermined(undetermined) if undetermined else None
 
 
 def _combine_costs(costs: List[CostInfo]) -> CostInfo:
@@ -263,8 +333,9 @@ def _decision(
     snapshot: _Snapshot,
     allowed_until: Optional[datetime] = None,
     next_change: Optional[UpcomingChange] = None,
+    location: Optional[LocationContext] = None,
 ) -> ParkingDecision:
-    if snapshot.status in (ParkingStatus.RED, ParkingStatus.UNKNOWN):
+    if snapshot.status in _NOT_ALLOWED:
         allowed_until = None
     max_stay = None if allowed_until is None else int((allowed_until - now).total_seconds() // 60)
     return ParkingDecision(
@@ -277,6 +348,7 @@ def _decision(
         next_change=next_change,
         reasons=snapshot.reasons,
         warnings=_dedupe(snapshot.warnings),
+        location=location,
     )
 
 

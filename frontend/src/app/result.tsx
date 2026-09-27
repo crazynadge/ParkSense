@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import type { ParkingDecision, ParkingStatus } from '@/api/types';
 import { PrimaryButton } from '@/components/PrimaryButton';
-import { costText, DISCLAIMER, reasonText, STATUS_HEADLINE } from '@/i18n/he';
+import { costText, DISCLAIMER, locationText, reasonText, STATUS_HEADLINE } from '@/i18n/he';
 import { useScanResult } from '@/state/scan-result';
 import { colors } from '@/theme/colors';
 import { formatDuration, formatLocalTime } from '@/utils/time';
@@ -58,7 +58,9 @@ export default function ResultScreen() {
         <PrimaryButton label="למסך הבית" variant="secondary" onPress={() => router.dismissAll()} />
       </View>
 
-      <Text style={styles.footnote}>נבדק בשעה {formatLocalTime(decision.evaluated_at, decision.evaluated_at)}</Text>
+      <Text style={styles.footnote}>
+        נבדק בשעה {formatLocalTime(decision.evaluated_at, decision.evaluated_at)} · {locationText(decision.location)}
+      </Text>
       <Text style={styles.footnote}>{DISCLAIMER}</Text>
     </ScrollView>
   );

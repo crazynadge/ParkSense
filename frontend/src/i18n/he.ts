@@ -1,10 +1,11 @@
 import type { ApiErrorKind } from '@/api/client';
-import type { CostInfo, ParkingStatus, Reason } from '@/api/types';
+import type { CostInfo, LocationContext, ParkingStatus, Reason } from '@/api/types';
 
 export const API_ERROR_TEXT: Record<ApiErrorKind, string> = {
   network: 'אין חיבור לשרת. הניתוח מתבצע בענן – בדקו את החיבור לאינטרנט ונסו שוב.',
   timeout: 'השרת לא הגיב בזמן. נסו שוב.',
   server: 'אירעה שגיאה בעיבוד הסריקה. נסו שוב.',
+  unavailable: 'זיהוי השלטים אינו זמין כרגע. נסו שוב בעוד רגע.',
 };
 
 export const STATUS_HEADLINE: Record<ParkingStatus, string> = {
@@ -29,6 +30,16 @@ const FIELD_LABELS: Record<string, string> = {
 
 export function cityLabel(city: string): string {
   return CITY_LABELS[city] ?? city;
+}
+
+/** "תל אביב-יפו, אזור 2", or a note when the location is unknown or imprecise. */
+export function locationText(location: LocationContext | null): string {
+  if (!location) return 'מיקום לא זמין';
+  if (!location.city) return location.city_certain ? 'מחוץ לאזורי הכיסוי' : 'מיקום לא מדויק';
+  const place = location.city_name_he ?? cityLabel(location.city);
+  const zone = location.zone ? `, אזור ${location.zone}` : '';
+  const precise = location.city_certain && (location.zone == null || location.zone_certain);
+  return precise ? `${place}${zone}` : `${place}${zone} (לא ודאי)`;
 }
 
 function permittedBy(reason: Reason): string {
@@ -80,12 +91,18 @@ export function reasonText(reason: Reason): string {
       return 'לא זוהו שלט או סימון אבן שפה.';
     case 'paid_hours_unknown':
       return 'אבן שפה כחולה-לבנה, אך שעות החניה בתשלום לא זוהו בשלט.';
+    case 'unsupported_condition':
+      return `השלט כולל תנאי שהאפליקציה עדיין לא יודעת לפרש: ${reason.params.conditions ?? ''}. בדקו את השלט בעצמכם.`;
     case 'paid_rate_unknown':
       return 'התעריף לשעה לא זוהה בשלט.';
     case 'max_duration_unknown':
       return 'משך החניה המרבי לא זוהה בשלט.';
-    case 'resident_city_unknown':
-      return `השלט פוטר את תושבי אזור ${reason.params.zone ?? ''}, אך העיר לא זוהתה ולכן הפטור לא הוחל.`;
+    case 'location_uncertain':
+      return `לא ניתן לאמת את מיקומכם, ולכן לא ניתן לקבוע אם תו אזור ${reason.params.zone ?? ''} תקף כאן. הפעילו שירותי מיקום ונסו שוב.`;
+    case 'zone_mismatch':
+      return `בשלט זוהה אזור ${reason.params.sign_zone ?? ''}, אך לפי המיקום אתם באזור ${reason.params.gps_zone ?? ''}. ייתכן שהשלט נקרא לא נכון – בדקו אותו בעצמכם.`;
+    case 'local_zone_unknown':
+      return 'השלט מתייחס לתושבי האזור, אך לא ניתן לקבוע באיזה אזור אתם נמצאים. נסו שוב כשהמיקום מדויק יותר.';
   }
 }
 

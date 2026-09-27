@@ -83,6 +83,11 @@ class ParkingRule(BaseModel):
         default_factory=list,
         description="Residents of these zones are exempt (for RESIDENTS_ONLY: the permitted zones).",
     )
+    exempt_local_zone: bool = Field(
+        False,
+        description="The sign exempts residents of the local zone without printing its number "
+        "(e.g. 'לתושבי האזור'). The zone is then taken from the GPS location.",
+    )
     exempt_disabled: Optional[bool] = Field(
         None,
         description="Explicit disabled-permit exemption on the sign. None = apply default policy.",
@@ -102,4 +107,8 @@ class ParkingSignData(BaseModel):
     unreadable_fields: List[str] = Field(
         default_factory=list,
         description="Parts of the sign the extractor could not read (partial / occluded sign).",
+    )
+    unsupported_conditions: List[str] = Field(
+        default_factory=list,
+        description="Conditions read from the sign that the rule schema cannot express (e.g. holiday eves).",
     )
