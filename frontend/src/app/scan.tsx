@@ -1,133 +1,150 @@
-import { useRouter } from 'expo-router';
+import { useCameraPermissions } from 'expo-camera';
+import { useIsFocused, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { analyzeParking, ApiError, type ApiErrorKind } from '@/api/client';
+import { ApiError, scanSign } from '@/api/client';
 import { PrimaryButton } from '@/components/PrimaryButton';
-import { SIGN_SCENARIOS } from '@/mocks/sign-scenarios';
+import { SignCamera } from '@/components/SignCamera';
+import { API_ERROR_TEXT } from '@/i18n/he';
 import { DEMO_CITY, DEMO_PROFILE } from '@/state/profile';
 import { useScanResult } from '@/state/scan-result';
 import { colors } from '@/theme/colors';
-
-const ERROR_MESSAGES: Record<ApiErrorKind, string> = {
-  network: 'אין חיבור לשרת. הניתוח מתבצע בענן – בדקו את החיבור לאינטרנט ונסו שוב.',
-  timeout: 'השרת לא הגיב בזמן. נסו שוב.',
-  server: 'אירעה שגיאה בעיבוד הסריקה. נסו שוב.',
-};
+import { prepareForUpload, type PreparedImage } from '@/utils/image';
 
 export default function ScanScreen() {
   const router = useRouter();
+  const isFocused = useIsFocused();
+  const [permission, requestPermission] = useCameraPermissions();
   const { setDecision } = useScanResult();
-  const [scenarioId, setScenarioId] = useState(SIGN_SCENARIOS[0].id);
-  const [loading, setLoading] = useState(false);
+  const [processingUri, setProcessingUri] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function analyze() {
-    const scenario = SIGN_SCENARIOS.find((s) => s.id === scenarioId) ?? SIGN_SCENARIOS[0];
-    setLoading(true);
+  async function handleCapture(photo: PreparedImage) {
+    setProcessingUri(photo.uri);
     setError(null);
     try {
-      const decision = await analyzeParking({
-        sign_data: scenario.signData,
-        current_time: new Date().toISOString(),
+      const image = await prepareForUpload(photo);
+      const decision = await scanSign({
+        imageUri: image.uri,
+        currentTime: new Date().toISOString(),
         profile: DEMO_PROFILE,
         city: DEMO_CITY,
       });
       setDecision(decision);
       router.push('/result');
     } catch (e) {
-      if (__DEV__) console.warn('analyze-parking failed', e);
-      setError(ERROR_MESSAGES[e instanceof ApiError ? e.kind : 'server']);
+      if (__DEV__) console.warn('scan failed', e);
+      setError(e instanceof ApiError ? API_ERROR_TEXT[e.kind] : 'עיבוד התמונה נכשל. נסו לצלם שוב.');
     } finally {
-      setLoading(false);
+      setProcessingUri(null);
     }
   }
 
+  if (!permission) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator />
+      </View>
+    );
+  }
+
+  if (!permission.granted) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.permissionTitle}>נדרשת גישה למצלמה</Text>
+        <Text style={styles.permissionBody}>
+          כדי לבדוק אם מותר לחנות, צלמו את שלט החניה ואת אבן השפה. התמונה נשלחת לניתוח בלבד ואינה נשמרת.
+        </Text>
+        {permission.canAskAgain ? (
+          <PrimaryButton label="אפשר גישה למצלמה" onPress={requestPermission} />
+        ) : (
+          <>
+            <Text style={styles.permissionBody}>הגישה למצלמה נחסמה. ניתן לאפשר אותה בהגדרות המכשיר.</Text>
+            <PrimaryButton label="פתח הגדרות" onPress={() => Linking.openSettings()} />
+          </>
+        )}
+      </View>
+    );
+  }
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      {/* Placeholder: the camera module replaces this frame in a later phase. */}
-      <View style={styles.frame}>
-        <Text style={styles.frameText}>תצוגת מצלמה</Text>
-      </View>
-      <Text style={styles.guidance}>ודאו שהשלט מואר וממורכז במסגרת.</Text>
+    <View style={styles.cameraScreen}>
+      {/* Only one camera preview may be active; release it while another screen is on top. */}
+      {isFocused && <SignCamera onCapture={handleCapture} onError={setError} disabled={processingUri !== null} />}
 
-      <View style={styles.scenarios} accessibilityRole="radiogroup">
-        <Text style={styles.sectionTitle}>תרחיש לדוגמה (פיתוח)</Text>
-        {SIGN_SCENARIOS.map((scenario) => {
-          const selected = scenario.id === scenarioId;
-          return (
-            <Pressable
-              key={scenario.id}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: selected }}
-              onPress={() => setScenarioId(scenario.id)}
-              style={[styles.scenario, selected && styles.scenarioSelected]}
-            >
-              <Text style={[styles.scenarioText, selected && styles.scenarioTextSelected]}>{scenario.label}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      {processingUri && (
+        <View style={StyleSheet.absoluteFill}>
+          <Image source={{ uri: processingUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          <View style={styles.processingOverlay}>
+            <ActivityIndicator size="large" color="#FFFFFF" />
+            <Text style={styles.processingText}>מנתח את השלט…</Text>
+          </View>
+        </View>
+      )}
 
-      {error && <Text style={styles.error}>{error}</Text>}
-
-      <PrimaryButton label="צלם ונתח" size="large" loading={loading} onPress={analyze} />
-    </ScrollView>
+      {error && (
+        <Pressable
+          accessibilityRole="alert"
+          accessibilityHint="הקישו כדי לסגור"
+          onPress={() => setError(null)}
+          style={styles.errorBanner}
+        >
+          <Text style={styles.errorText}>{error}</Text>
+        </Pressable>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  centered: {
+    flex: 1,
     padding: 24,
     gap: 16,
-  },
-  frame: {
-    height: 220,
-    borderRadius: 20,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
     justifyContent: 'center',
   },
-  frameText: {
-    color: colors.textMuted,
-  },
-  guidance: {
-    textAlign: 'center',
-    color: colors.textMuted,
-  },
-  scenarios: {
-    gap: 8,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textMuted,
-  },
-  scenario: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  scenarioSelected: {
-    borderColor: colors.primary,
-    borderWidth: 2,
-  },
-  scenarioText: {
-    fontSize: 15,
+  permissionTitle: {
+    fontSize: 22,
+    fontWeight: '700',
     color: colors.text,
   },
-  scenarioTextSelected: {
-    fontWeight: '600',
-    color: colors.primary,
+  permissionBody: {
+    fontSize: 16,
+    lineHeight: 23,
+    color: colors.textMuted,
   },
-  error: {
-    color: colors.errorText,
+  cameraScreen: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  processingOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  processingText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  errorBanner: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    right: 16,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: colors.status.red,
+  },
+  errorText: {
+    color: '#FFFFFF',
     fontSize: 15,
     lineHeight: 21,
   },

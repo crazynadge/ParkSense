@@ -1,4 +1,11 @@
+import type { ApiErrorKind } from '@/api/client';
 import type { CostInfo, ParkingStatus, Reason } from '@/api/types';
+
+export const API_ERROR_TEXT: Record<ApiErrorKind, string> = {
+  network: 'אין חיבור לשרת. הניתוח מתבצע בענן – בדקו את החיבור לאינטרנט ונסו שוב.',
+  timeout: 'השרת לא הגיב בזמן. נסו שוב.',
+  server: 'אירעה שגיאה בעיבוד הסריקה. נסו שוב.',
+};
 
 export const STATUS_HEADLINE: Record<ParkingStatus, string> = {
   green: 'מותר לחנות',

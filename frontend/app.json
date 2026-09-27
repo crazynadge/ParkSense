@@ -31,6 +31,14 @@
           "supportsRTL": true,
           "forcesRTL": true
         }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "האפליקציה צריכה גישה למצלמה כדי לצלם שלטי חניה ואבני שפה ולבדוק אם מותר לחנות.",
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": false
+        }
       ]
     ],
     "scheme": "parksense",

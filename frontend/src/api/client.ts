@@ -1,8 +1,11 @@
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
-import type { AnalyzeParkingRequest, ParkingDecision } from './types';
+import type { AnalyzeParkingRequest, ParkingDecision, UserProfile } from './types';
 
-const REQUEST_TIMEOUT_MS = 10_000;
+const JSON_TIMEOUT_MS = 10_000;
+// Uploads include the photo, so allow more time on a weak cellular connection.
+const UPLOAD_TIMEOUT_MS = 20_000;
 
 /**
  * EXPO_PUBLIC_API_URL wins. Otherwise use the dev machine's LAN address (the host
@@ -30,21 +33,16 @@ export class ApiError extends Error {
   }
 }
 
-export async function analyzeParking(request: AnalyzeParkingRequest): Promise<ParkingDecision> {
+async function post<T>(path: string, init: RequestInit, timeoutMs: number): Promise<T> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}/api/v1/analyze-parking`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request),
-      signal: controller.signal,
-    });
+    response = await fetch(`${API_BASE_URL}${path}`, { ...init, method: 'POST', signal: controller.signal });
   } catch (error) {
     if (controller.signal.aborted) {
-      throw new ApiError('timeout', `Request timed out after ${REQUEST_TIMEOUT_MS} ms`);
+      throw new ApiError('timeout', `Request timed out after ${timeoutMs} ms`);
     }
     throw new ApiError('network', error instanceof Error ? error.message : String(error));
   } finally {
@@ -54,5 +52,40 @@ export async function analyzeParking(request: AnalyzeParkingRequest): Promise<Pa
   if (!response.ok) {
     throw new ApiError('server', `HTTP ${response.status}: ${await response.text()}`, response.status);
   }
-  return (await response.json()) as ParkingDecision;
+  return (await response.json()) as T;
+}
+
+/** Rule engine only, with already-extracted sign data (development scenarios). */
+export function analyzeParking(request: AnalyzeParkingRequest): Promise<ParkingDecision> {
+  return post<ParkingDecision>(
+    '/api/v1/analyze-parking',
+    { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) },
+    JSON_TIMEOUT_MS,
+  );
+}
+
+export type ScanRequest = {
+  imageUri: string; // JPEG
+  currentTime: string; // ISO 8601
+  profile: UserProfile;
+  city?: string | null;
+};
+
+/** Full pipeline: photo -> Vision extraction -> rule engine. */
+export async function scanSign({ imageUri, currentTime, profile, city }: ScanRequest): Promise<ParkingDecision> {
+  const form = new FormData();
+  if (Platform.OS === 'web') {
+    // On web the image URI is a blob:/data: URL; upload the bytes with an explicit type.
+    const bytes = await (await fetch(imageUri)).blob();
+    form.append('image', new Blob([bytes], { type: 'image/jpeg' }), 'sign.jpg');
+  } else {
+    // React Native's FormData streams the file from disk given { uri, name, type }.
+    form.append('image', { uri: imageUri, name: 'sign.jpg', type: 'image/jpeg' } as unknown as Blob);
+  }
+  form.append('current_time', currentTime);
+  form.append('profile', JSON.stringify(profile));
+  if (city) form.append('city', city);
+
+  // No Content-Type header: fetch sets multipart/form-data with the boundary itself.
+  return post<ParkingDecision>('/api/v1/scan', { body: form }, UPLOAD_TIMEOUT_MS);
 }

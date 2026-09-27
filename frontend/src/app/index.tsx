@@ -25,6 +25,11 @@ export default function HomeScreen() {
         <Link href="/profile" style={styles.link}>
           פרופיל נהג
         </Link>
+        {__DEV__ && (
+          <Link href="/dev-scenarios" style={styles.devLink}>
+            תרחישים לדוגמה (פיתוח)
+          </Link>
+        )}
         <Text style={styles.disclaimer}>{DISCLAIMER}</Text>
       </View>
     </SafeAreaView>
@@ -71,6 +76,11 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: 16,
     fontWeight: '600',
+  },
+  devLink: {
+    color: colors.textMuted,
+    fontSize: 14,
+    textDecorationLine: 'underline',
   },
   disclaimer: {
     fontSize: 12,

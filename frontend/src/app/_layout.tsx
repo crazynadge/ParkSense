@@ -28,6 +28,7 @@ export default function RootLayout() {
         <Stack.Screen name="scan" options={{ title: 'סריקת שלט' }} />
         <Stack.Screen name="result" options={{ title: 'תוצאה' }} />
         <Stack.Screen name="profile" options={{ title: 'פרופיל נהג' }} />
+        <Stack.Screen name="dev-scenarios" options={{ title: 'תרחישים לדוגמה' }} />
       </Stack>
     </ScanResultProvider>
   );
