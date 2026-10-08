@@ -1,6 +1,9 @@
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
+
+
+LocationSource = Literal["live", "parked"]
 
 
 class GpsFix(BaseModel):
@@ -9,6 +12,11 @@ class GpsFix(BaseModel):
     latitude: float = Field(..., ge=-90, le=90)
     longitude: float = Field(..., ge=-180, le=180)
     accuracy_m: Optional[float] = Field(None, ge=0, description="Horizontal accuracy radius in meters.")
+    source: LocationSource = Field(
+        "live",
+        description="live: where the phone is at scan time. parked: the car's position, "
+        "saved by the driver on leaving the vehicle ('חניתי כאן').",
+    )
 
 
 class LocationContext(BaseModel):
@@ -25,3 +33,4 @@ class LocationContext(BaseModel):
     zone: Optional[str] = Field(None, description="Resident parking zone containing the fix, if known.")
     zone_certain: bool = False
     accuracy_m: Optional[float] = None
+    source: LocationSource = "live"

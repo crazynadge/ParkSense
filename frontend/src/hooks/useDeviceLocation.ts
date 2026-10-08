@@ -1,56 +1,17 @@
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform } from 'react-native';
 
 import type { GpsFix } from '@/api/types';
+import { stripTime, toFix, watchPosition, type Fix, type Unsubscribe } from '@/location/position';
 
 // A fix older than this may be from before the driver parked.
 const MAX_FIX_AGE_MS = 60_000;
+const LAST_KNOWN_MAX_AGE_MS = 15_000;
 
 export type LocationStatus = 'idle' | 'locating' | 'ready' | 'denied' | 'unavailable';
 
-// receivedAt is our own clock, not the position's timestamp: a phone whose clock is
-// off would otherwise reject every fix as stale (or accept old ones as fresh).
-type Fix = GpsFix & { receivedAt: number };
-
-type Coords = { latitude: number; longitude: number; accuracy: number | null };
-
-function toFix(coords: Coords): Fix {
-  return {
-    latitude: coords.latitude,
-    longitude: coords.longitude,
-    accuracy_m: coords.accuracy ?? null,
-    receivedAt: Date.now(),
-  };
-}
-
 function isFresh(fix: Fix | null): fix is Fix {
   return fix !== null && Date.now() - fix.receivedAt <= MAX_FIX_AGE_MS;
-}
-
-type Unsubscribe = () => void;
-
-async function watchPosition(onFix: (fix: Fix) => void): Promise<Unsubscribe> {
-  if (Platform.OS === 'web') {
-    // expo-location's web watchPositionAsync overwrites its internal watch id with the
-    // browser's, so updates never reach the callback. Use the browser API directly.
-    const id = navigator.geolocation.watchPosition(
-      (position) => onFix(toFix(position.coords)),
-      (error) => {
-        if (__DEV__) console.warn('geolocation.watchPosition error', error.message);
-      },
-      { enableHighAccuracy: true, maximumAge: 5_000 },
-    );
-    return () => navigator.geolocation.clearWatch(id);
-  }
-  const subscription = await Location.watchPositionAsync(
-    { accuracy: Location.Accuracy.High, timeInterval: 2_000, distanceInterval: 3 },
-    (position) => onFix(toFix(position.coords)),
-    (error) => {
-      if (__DEV__) console.warn('watchPositionAsync error', error);
-    },
-  );
-  return () => subscription.remove();
 }
 
 /**
@@ -68,13 +29,10 @@ export function useDeviceLocation(active: boolean) {
   const latest = useRef<Fix | null>(null);
   const waiters = useRef<((fix: Fix) => void)[]>([]);
 
+  // The newest fix always wins. A "keep the more accurate one" rule looks tempting but
+  // is wrong here: a cached fix from where the car was (accurate) would override a live
+  // fix from where the phone is now (less accurate) after walking to the sign.
   const publish = useCallback((next: Fix) => {
-    // Keep the more accurate of two fresh fixes.
-    const current = latest.current;
-    const moreAccurate = (current?.accuracy_m ?? Infinity) < (next.accuracy_m ?? Infinity);
-    if (isFresh(current) && moreAccurate && next.receivedAt - current.receivedAt < 10_000) {
-      return;
-    }
     latest.current = next;
     setFix(next);
     setStatus('ready');
@@ -98,8 +56,9 @@ export function useDeviceLocation(active: boolean) {
         if (!cancelled) setStatus('unavailable');
         return;
       }
-      // expo-location filters by maxAge itself, using the position's own timestamp.
-      const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: MAX_FIX_AGE_MS, requiredAccuracy: 100 });
+      // A cached OS fix is only a head start, so keep it very recent: the driver may have
+      // walked from the car to the sign since. expo-location applies maxAge itself.
+      const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: LAST_KNOWN_MAX_AGE_MS, requiredAccuracy: 100 });
       if (cancelled) return;
       if (lastKnown) publish(toFix(lastKnown.coords));
       unsubscribe = await watchPosition(publish);
@@ -117,8 +76,7 @@ export function useDeviceLocation(active: boolean) {
 
   /** The latest fresh fix; waits up to `timeoutMs` for one if needed. Null if none arrives. */
   const getFix = useCallback(async (timeoutMs: number): Promise<GpsFix | null> => {
-    const strip = ({ receivedAt: _, ...gps }: Fix): GpsFix => gps;
-    if (isFresh(latest.current)) return strip(latest.current);
+    if (isFresh(latest.current)) return stripTime(latest.current);
     // No point waiting when location is off: scan without it.
     if (statusRef.current === 'denied' || statusRef.current === 'unavailable') return null;
     return new Promise((resolve) => {
@@ -128,7 +86,7 @@ export function useDeviceLocation(active: boolean) {
       }, timeoutMs);
       const onFix = (next: Fix) => {
         clearTimeout(timer);
-        resolve(strip(next));
+        resolve(stripTime(next));
       };
       waiters.current.push(onFix);
     });

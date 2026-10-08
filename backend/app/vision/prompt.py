@@ -16,6 +16,9 @@ Rules:
   If the sign mentions local residents without a zone number ("לתושבי האזור"), set
   exempt_local_zone=true and leave exempt_resident_zones empty; the zone is determined
   from the driver's GPS location, never by you.
+- "Free at all other times" statements ("ביתר הימים והשעות חינם", including variants that
+  add "כולל שבת") set free_outside_windows=true. They are fully supported; never put them
+  in unsupported_conditions.
 - Conditions the schema cannot express (holiday eves "ערבי חג", holidays "חגים", events,
   vehicle weight limits, specific dates) go in unsupported_conditions, verbatim in Hebrew.
   Do not drop them and do not approximate them.

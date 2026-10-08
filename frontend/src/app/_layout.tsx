@@ -2,6 +2,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Platform } from 'react-native';
 
+import { ParkedLocationProvider } from '@/state/parked-location';
 import { ScanResultProvider } from '@/state/scan-result';
 import { colors } from '@/theme/colors';
 
@@ -14,22 +15,24 @@ if (Platform.OS === 'web' && typeof document !== 'undefined') {
 
 export default function RootLayout() {
   return (
-    <ScanResultProvider>
-      <StatusBar style="dark" />
-      <Stack
-        screenOptions={{
-          headerStyle: { backgroundColor: colors.surface },
-          headerTintColor: colors.text,
-          headerBackButtonDisplayMode: 'minimal',
-          contentStyle: { backgroundColor: colors.background },
-        }}
-      >
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="scan" options={{ title: 'סריקת שלט' }} />
-        <Stack.Screen name="result" options={{ title: 'תוצאה' }} />
-        <Stack.Screen name="profile" options={{ title: 'פרופיל נהג' }} />
-        <Stack.Screen name="dev-scenarios" options={{ title: 'תרחישים לדוגמה' }} />
-      </Stack>
-    </ScanResultProvider>
+    <ParkedLocationProvider>
+      <ScanResultProvider>
+        <StatusBar style="dark" />
+        <Stack
+          screenOptions={{
+            headerStyle: { backgroundColor: colors.surface },
+            headerTintColor: colors.text,
+            headerBackButtonDisplayMode: 'minimal',
+            contentStyle: { backgroundColor: colors.background },
+          }}
+        >
+          <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen name="scan" options={{ title: 'סריקת שלט' }} />
+          <Stack.Screen name="result" options={{ title: 'תוצאה' }} />
+          <Stack.Screen name="profile" options={{ title: 'פרופיל נהג' }} />
+          <Stack.Screen name="dev-scenarios" options={{ title: 'תרחישים לדוגמה' }} />
+        </Stack>
+      </ScanResultProvider>
+    </ParkedLocationProvider>
   );
 }

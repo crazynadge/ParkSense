@@ -370,3 +370,60 @@ class TestLocalZoneSigns:
         assert evaluate(self.local_sign(), at("mon", "21:00"), givatayim, location=in_tlv_zone_unknown).status == (
             ParkingStatus.RED
         )
+
+
+class TestFreeOutsideWindows:
+    """Signs such as "ביתר הימים והשעות כולל שבת חינם"."""
+
+    @staticmethod
+    def zone_10_sign(free_outside=True):
+        # Paid Sun-Thu 08:00-21:00 and Fri 08:00-17:00, zone 10 exempt; free the rest of the time.
+        return sign(
+            ParkingRule(
+                rule_type=RuleType.PAID,
+                windows=[
+                    TimeWindow(days=SUN_THU, start="08:00", end="21:00"),
+                    TimeWindow(days=[Weekday.FRI], start="08:00", end="17:00"),
+                ],
+                price_per_hour=6.3,
+                exempt_resident_zones=[ResidentZone(zone="10")],
+            ),
+            free_outside_windows=free_outside,
+        )
+
+    @pytest.mark.parametrize(
+        "day, hhmm, status",
+        [
+            ("mon", "10:00", ParkingStatus.ORANGE),  # inside paid hours
+            ("mon", "21:30", ParkingStatus.GREEN),  # after hours
+            ("tue", "07:59", ParkingStatus.GREEN),  # before hours
+            ("fri", "16:59", ParkingStatus.ORANGE),
+            ("fri", "17:00", ParkingStatus.GREEN),  # end is exclusive
+            ("sat", "12:00", ParkingStatus.GREEN),  # "כולל שבת"
+        ],
+    )
+    def test_definitive_verdicts_around_the_clock(self, day, hhmm, status):
+        assert evaluate(self.zone_10_sign(), at(day, hhmm), VISITOR).status == status
+
+    def test_free_verdict_cites_the_sign(self):
+        d = evaluate(self.zone_10_sign(), at("sat", "12:00"), VISITOR)
+        assert [r.code for r in d.reasons] == [ReasonCode.FREE_OUTSIDE_HOURS]
+        assert d.cost.type == CostType.FREE
+        # Free until paid hours resume on Sunday morning, then orange (not red).
+        assert d.next_change.at == at("sun", "08:00") + timedelta(days=7)
+        assert d.next_change.status == ParkingStatus.ORANGE
+        assert d.allowed_until is None
+
+    def test_without_flag_reason_is_generic(self):
+        d = evaluate(self.zone_10_sign(free_outside=False), at("sat", "12:00"), VISITOR)
+        assert [r.code for r in d.reasons] == [ReasonCode.NO_RESTRICTION]
+
+    def test_resident_of_zone_10_is_exempt_during_paid_hours(self):
+        zone_10 = UserProfile(resident_permits=[ResidentPermit(city="Tel Aviv", zone="10")])
+        d = evaluate(self.zone_10_sign(), at("mon", "10:00"), zone_10, location=location(zone="10"))
+        assert d.status == ParkingStatus.GREEN
+        assert d.cost.type == CostType.EXEMPT
+
+    def test_contradiction_is_rejected(self):
+        with pytest.raises(ValueError):
+            sign(ParkingRule(rule_type=RuleType.PAID), free_outside_windows=True)

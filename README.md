@@ -50,6 +50,11 @@ reported as uncertain, never guessed). The rule engine then cross-checks: reside
 a certain city; a sign zone that contradicts a certain GPS zone is treated as a possible misread;
 "local residents" signs without a zone number take the zone from GPS.
 
+**חניתי כאן (Parked here):** the Home screen can pin the car's position (a precise fix, stored
+in the iOS Keychain / Android Keystore via `expo-secure-store`, device-only, expiring after 24 h).
+While a spot is saved, scans are judged by the car's position, not where the photo is taken, and
+the result says so. On web (development only) the spot is kept in memory.
+
 Boundary data: Tel Aviv-Yafo city boundary and parking zones from the municipality GIS
 (layers 890, 544); neighbouring cities from © OpenStreetMap contributors (ODbL). Rebuild with:
 

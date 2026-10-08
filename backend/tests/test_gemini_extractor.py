@@ -46,6 +46,7 @@ def extraction(**overrides) -> dict:
         ],
         "unreadable_fields": [],
         "unsupported_conditions": [],
+        "free_outside_windows": False,
     }
     base.update(overrides)
     return base
@@ -206,3 +207,21 @@ class TestConfig:
         fresh_settings.setenv("GEMINI_MODEL", "gemini-x")
         settings = get_settings()
         assert (settings.vision_provider, settings.gemini_api_key, settings.gemini_model) == ("gemini", "abc", "gemini-x")
+
+
+class TestFreeOutsideWindows:
+    def test_flag_reaches_engine_and_gives_definitive_verdict(self):
+        extractor, _ = make_extractor(json.dumps(extraction(free_outside_windows=True)))
+        sign = run(extractor.extract(b"x"))
+        assert sign.free_outside_windows
+        # Saturday: outside every listed window -> free per the sign, not "unknown".
+        saturday = datetime(2026, 10, 3, 12, 0, tzinfo=DEFAULT_TIMEZONE)
+        decision = evaluate(sign, saturday, VISITOR)
+        assert decision.status == ParkingStatus.GREEN
+        assert decision.reasons[0].code == ReasonCode.FREE_OUTSIDE_HOURS
+
+    def test_contradiction_with_always_on_rule_is_unknown(self):
+        bad = extraction(free_outside_windows=True)
+        bad["rules"][0]["windows"] = []  # "applies at all times" AND "free the rest of the time"
+        extractor, _ = make_extractor(json.dumps(bad))
+        assert evaluate(run(extractor.extract(b"x")), MONDAY_10AM, VISITOR).status == ParkingStatus.UNKNOWN

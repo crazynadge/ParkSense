@@ -76,7 +76,18 @@ def test_gps_is_resolved_and_echoed():
         "zone": "2",
         "zone_certain": True,
         "accuracy_m": 12.0,
+        "source": "live",
     }
+
+
+def test_parked_location_source_is_echoed():
+    body = post_scan(location={**IN_TLV_ZONE_2, "location_source": "parked"}).json()
+    assert body["location"]["source"] == "parked"
+    assert body["location"]["zone"] == "2"
+
+
+def test_unknown_location_source_rejected():
+    assert post_scan(location={**IN_TLV_ZONE_2, "location_source": "guess"}).status_code == 422
 
 
 def test_resident_permit_uses_gps_zone():

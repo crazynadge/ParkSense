@@ -76,6 +76,11 @@ class SignExtraction(BaseModel):
     unreadable_fields: List[str] = Field(
         description="Parts of the sign that are blurred, cut off or occluded, e.g. 'hours', 'days', 'price', 'zone'."
     )
+    free_outside_windows: bool = Field(
+        description="true if the sign states parking is free at all other days and times, e.g. "
+        "'ביתר הימים והשעות חינם', 'בשאר השעות החניה חופשית', 'ביתר הימים והשעות כולל שבת חינם'. "
+        "This is supported: do NOT also list it in unsupported_conditions."
+    )
     unsupported_conditions: List[str] = Field(
         description="Conditions on the sign that the rules above cannot express, e.g. holiday eves, events, "
         "vehicle weight or type limits other than commercial loading. Hebrew as printed."
@@ -92,6 +97,7 @@ def to_sign_data(extraction: SignExtraction) -> ParkingSignData:
         unreadable_fields=extraction.unreadable_fields,
         # The engine returns UNKNOWN for these rather than a verdict that ignores them.
         unsupported_conditions=extraction.unsupported_conditions,
+        free_outside_windows=extraction.free_outside_windows,
         rules=[
             ParkingRule(
                 rule_type=rule.rule_type,

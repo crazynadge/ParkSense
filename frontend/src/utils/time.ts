@@ -54,3 +54,12 @@ export function formatDuration(totalMinutes: number): string {
   if (minutes === 0) return hoursText;
   return and(hoursText, minutesText);
 }
+
+/** "עכשיו", "לפני 5 דקות", "לפני שעתיים"... for a past epoch-ms time. */
+export function formatAgo(epochMs: number, now: number = Date.now()): string {
+  const minutes = Math.max(0, Math.floor((now - epochMs) / 60_000));
+  if (minutes < 1) return 'עכשיו';
+  if (minutes < 60) return `לפני ${minutes === 1 ? 'דקה' : `${minutes} דקות`}`;
+  const hours = Math.floor(minutes / 60);
+  return `לפני ${formatHours(hours)}`;
+}

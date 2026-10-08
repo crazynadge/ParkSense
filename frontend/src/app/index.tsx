@@ -2,6 +2,7 @@ import { Link, useRouter } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ParkedCard } from '@/components/ParkedCard';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { DISCLAIMER } from '@/i18n/he';
 import { colors } from '@/theme/colors';
@@ -17,6 +18,7 @@ export default function HomeScreen() {
       </View>
 
       <View style={styles.main}>
+        <ParkedCard />
         <PrimaryButton label="סרוק שלט" size="large" onPress={() => router.push('/scan')} />
         <Text style={styles.hint}>צלמו את שלט החניה ואת אבן השפה ליד הרכב.</Text>
       </View>

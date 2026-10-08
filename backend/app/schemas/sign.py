@@ -112,3 +112,15 @@ class ParkingSignData(BaseModel):
         default_factory=list,
         description="Conditions read from the sign that the rule schema cannot express (e.g. holiday eves).",
     )
+    free_outside_windows: bool = Field(
+        False,
+        description="The sign states parking is free at all times outside its rules' windows "
+        "(e.g. 'ביתר הימים והשעות חינם').",
+    )
+
+    @model_validator(mode="after")
+    def _check_free_outside_windows(self) -> "ParkingSignData":
+        # "Free outside the listed hours" presupposes that every rule has listed hours.
+        if self.free_outside_windows and any(not rule.windows for rule in self.rules):
+            raise ValueError("free_outside_windows contradicts a rule that applies at all times")
+        return self

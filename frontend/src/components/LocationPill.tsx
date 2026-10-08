@@ -1,6 +1,8 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import type { LocationStatus } from '@/hooks/useDeviceLocation';
+import type { ScanLocation } from '@/hooks/useScanLocation';
+import { formatAgo } from '@/utils/time';
 
 const LABELS: Record<LocationStatus, string> = {
   idle: 'מיקום',
@@ -10,14 +12,22 @@ const LABELS: Record<LocationStatus, string> = {
   unavailable: 'אין מיקום',
 };
 
-/** Location status over the camera, so the driver knows whether permits can be verified. */
-export function LocationPill({ status, accuracy }: { status: LocationStatus; accuracy: number | null }) {
-  const ok = status === 'ready';
-  const label = ok && accuracy != null ? `מיקום ±${Math.round(accuracy)} מ׳` : LABELS[status];
+function label({ source, status, accuracy, savedAt }: ScanLocation): string {
+  if (source === 'parked' && savedAt != null) return `מיקום הרכב · ${formatAgo(savedAt)}`;
+  if (status === 'ready' && accuracy != null) return `מיקום ±${Math.round(accuracy)} מ׳`;
+  return LABELS[status];
+}
+
+/** Which location the scan will be judged by, shown over the camera. */
+export function LocationPill({ location }: { location: ScanLocation }) {
+  const ok = location.status === 'ready';
+  const text = label(location);
   return (
-    <View style={[styles.pill, !ok && styles.pillMuted]} accessible accessibilityLabel={label}>
-      <View style={[styles.dot, ok ? styles.dotOk : styles.dotOff]} />
-      <Text style={styles.text}>{label}</Text>
+    <View style={styles.pill} accessible accessibilityLabel={text}>
+      <View style={[styles.dot, location.source === 'parked' ? styles.dotParked : ok ? styles.dotOk : styles.dotOff]} />
+      <Text style={styles.text} numberOfLines={1}>
+        {text}
+      </Text>
     </View>
   );
 }
@@ -32,9 +42,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: 'rgba(0, 0, 0, 0.55)',
   },
-  pillMuted: {
-    opacity: 0.85,
-  },
   dot: {
     width: 8,
     height: 8,
@@ -42,6 +49,9 @@ const styles = StyleSheet.create({
   },
   dotOk: {
     backgroundColor: '#4ADE80',
+  },
+  dotParked: {
+    backgroundColor: '#60A5FA',
   },
   dotOff: {
     backgroundColor: '#FBBF24',

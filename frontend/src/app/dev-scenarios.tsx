@@ -4,7 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { analyzeParking, ApiError } from '@/api/client';
 import { PrimaryButton } from '@/components/PrimaryButton';
-import { useDeviceLocation } from '@/hooks/useDeviceLocation';
+import { useScanLocation } from '@/hooks/useScanLocation';
 import { API_ERROR_TEXT } from '@/i18n/he';
 import { SIGN_SCENARIOS } from '@/mocks/sign-scenarios';
 import { DEMO_PROFILE } from '@/state/profile';
@@ -19,7 +19,7 @@ export default function DevScenariosScreen() {
   const [scenarioId, setScenarioId] = useState(SIGN_SCENARIOS[0].id);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const location = useDeviceLocation(useIsFocused());
+  const location = useScanLocation(useIsFocused());
 
   async function analyze() {
     const scenario = SIGN_SCENARIOS.find((s) => s.id === scenarioId) ?? SIGN_SCENARIOS[0];

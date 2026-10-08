@@ -39,6 +39,7 @@ export type ParkingSignData = {
   rules?: ParkingRule[];
   unreadable_fields?: string[];
   unsupported_conditions?: string[];
+  free_outside_windows?: boolean;
 };
 
 export type VehicleType = 'private' | 'commercial' | 'motorcycle';
@@ -49,10 +50,13 @@ export type UserProfile = {
   has_disabled_permit: boolean;
 };
 
+export type LocationSource = 'live' | 'parked';
+
 export type GpsFix = {
   latitude: number;
   longitude: number;
   accuracy_m: number | null;
+  source?: LocationSource;
 };
 
 /** How the backend resolved a GPS fix against city and parking-zone boundaries. */
@@ -63,6 +67,7 @@ export type LocationContext = {
   zone: string | null;
   zone_certain: boolean;
   accuracy_m: number | null;
+  source: LocationSource;
 };
 
 export type AnalyzeParkingRequest = {
@@ -77,6 +82,7 @@ export type CostType = 'free' | 'paid' | 'exempt' | 'unknown';
 
 export type ReasonCode =
   | 'no_restriction'
+  | 'free_outside_hours'
   | 'red_white_curb'
   | 'no_stopping'
   | 'no_parking'

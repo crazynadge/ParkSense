@@ -94,6 +94,7 @@ class Locator:
             zone=zone.zone if zone else None,
             zone_certain=zone_certain,
             accuracy_m=fix.accuracy_m,
+            source=fix.source,
         )
 
 

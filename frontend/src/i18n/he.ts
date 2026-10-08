@@ -35,11 +35,15 @@ export function cityLabel(city: string): string {
 /** "תל אביב-יפו, אזור 2", or a note when the location is unknown or imprecise. */
 export function locationText(location: LocationContext | null): string {
   if (!location) return 'מיקום לא זמין';
-  if (!location.city) return location.city_certain ? 'מחוץ לאזורי הכיסוי' : 'מיקום לא מדויק';
+  if (!location.city) {
+    const text = location.city_certain ? 'מחוץ לאזורי הכיסוי' : 'מיקום לא מדויק';
+    return location.source === 'parked' ? `לפי מיקום הרכב: ${text}` : text;
+  }
   const place = location.city_name_he ?? cityLabel(location.city);
   const zone = location.zone ? `, אזור ${location.zone}` : '';
   const precise = location.city_certain && (location.zone == null || location.zone_certain);
-  return precise ? `${place}${zone}` : `${place}${zone} (לא ודאי)`;
+  const text = precise ? `${place}${zone}` : `${place}${zone} (לא ודאי)`;
+  return location.source === 'parked' ? `לפי מיקום הרכב: ${text}` : text;
 }
 
 function permittedBy(reason: Reason): string {
@@ -63,6 +67,8 @@ export function reasonText(reason: Reason): string {
   switch (reason.code) {
     case 'no_restriction':
       return 'אין הגבלת חניה בשעה זו';
+    case 'free_outside_hours':
+      return 'השלט קובע: ביתר הימים והשעות החניה חינם';
     case 'red_white_curb':
       return 'אבן שפה אדומה-לבנה: אסור לעצור בכל זמן';
     case 'no_stopping':

@@ -112,13 +112,18 @@ def evaluate(
     horizon_end = now + timedelta(days=LOOKAHEAD_DAYS)
     schedule = [(rule, rule_intervals(rule, now, horizon_end)) for rule in sign.rules]
 
-    current = _snapshot_at(now, schedule, profile, location)
+    free_reason = (
+        _reason(ReasonCode.FREE_OUTSIDE_HOURS, "The sign states parking is free outside its listed hours")
+        if sign.free_outside_windows
+        else _reason(ReasonCode.NO_RESTRICTION, "No restriction in force")
+    )
+    current = _snapshot_at(now, schedule, profile, location, free_reason)
     boundaries = sorted({b for _, ivs in schedule for iv in ivs for b in iv if now < b < horizon_end})
 
     allowed_until: Optional[datetime] = None
     next_change: Optional[UpcomingChange] = None
     for boundary in boundaries:
-        later = _snapshot_at(boundary, schedule, profile, location)
+        later = _snapshot_at(boundary, schedule, profile, location, free_reason)
         if next_change is None and (later.status, later.cost) != (current.status, current.cost):
             next_change = UpcomingChange(at=boundary, status=later.status, reasons=later.reasons)
         if current.status in _NOT_ALLOWED:
@@ -161,6 +166,7 @@ def _snapshot_at(
     schedule: List[Tuple[ParkingRule, List[Interval]]],
     profile: UserProfile,
     location: Optional[LocationContext],
+    free_reason: Reason,
 ) -> _Snapshot:
     active: List[Tuple[_RuleOutcome, Interval]] = []
     warnings: List[Reason] = []
@@ -172,7 +178,7 @@ def _snapshot_at(
             warnings.extend(rule_warnings)
 
     if not active:
-        return _Snapshot(ParkingStatus.GREEN, _FREE, [_reason(ReasonCode.NO_RESTRICTION, "No restriction in force")])
+        return _Snapshot(ParkingStatus.GREEN, _FREE, [free_reason])
 
     status = max((o.status for o, _ in active), key=_SEVERITY.__getitem__)
     reasons = [o.reason for o, _ in active]

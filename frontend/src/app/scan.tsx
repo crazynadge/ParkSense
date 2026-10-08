@@ -7,7 +7,7 @@ import { ApiError, scanSign } from '@/api/client';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { LocationPill } from '@/components/LocationPill';
 import { SignCamera } from '@/components/SignCamera';
-import { useDeviceLocation } from '@/hooks/useDeviceLocation';
+import { useScanLocation } from '@/hooks/useScanLocation';
 import { API_ERROR_TEXT } from '@/i18n/he';
 import { DEMO_PROFILE } from '@/state/profile';
 import { useScanResult } from '@/state/scan-result';
@@ -22,7 +22,7 @@ export default function ScanScreen() {
   const [processingUri, setProcessingUri] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Start locating as soon as the camera is up, so a fix is ready at the shutter.
-  const location = useDeviceLocation(isFocused && permission?.granted === true);
+  const location = useScanLocation(isFocused && permission?.granted === true);
 
   async function handleCapture(photo: PreparedImage) {
     setProcessingUri(photo.uri);
@@ -82,7 +82,7 @@ export default function ScanScreen() {
           onCapture={handleCapture}
           onError={setError}
           disabled={processingUri !== null}
-          accessory={<LocationPill status={location.status} accuracy={location.accuracy} />}
+          accessory={<LocationPill location={location} />}
         />
       )}
 

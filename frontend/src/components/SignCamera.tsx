@@ -8,7 +8,7 @@ type Props = {
   onCapture: (photo: PreparedImage) => void;
   onError: (message: string) => void;
   disabled?: boolean;
-  /** Shown beside the shutter, e.g. a location status indicator. */
+  /** Shown at the top of the preview, e.g. a location status indicator. */
   accessory?: ReactNode;
 };
 
@@ -49,6 +49,12 @@ export function SignCamera({ onCapture, onError, disabled, accessory }: Props) {
 
       <FrameGuide />
 
+      {accessory && (
+        <View style={styles.accessory} pointerEvents="box-none">
+          {accessory}
+        </View>
+      )}
+
       <View style={styles.controls}>
         <View style={styles.slot}>
           {/* Browsers expose no torch control. */}
@@ -76,7 +82,7 @@ export function SignCamera({ onCapture, onError, disabled, accessory }: Props) {
             <View style={styles.shutterInner} />
           </Pressable>
         </View>
-        <View style={styles.slot}>{accessory}</View>
+        <View style={styles.slot} />
       </View>
     </View>
   );
@@ -140,6 +146,13 @@ const styles = StyleSheet.create({
   },
   bottomDim: {
     flex: 1.4, // leaves room for the controls
+  },
+  accessory: {
+    position: 'absolute',
+    top: 12,
+    left: 16,
+    right: 16,
+    alignItems: 'center',
   },
   controls: {
     position: 'absolute',

@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.geo import Locator, get_locator
 from app.rule_engine import evaluate
 from app.schemas import GpsFix, LocationContext, ParkingDecision, ParkingSignData, UserProfile
+from app.schemas.location import LocationSource
 from app.vision import MockSignExtractor, SignExtractor, VisionUnavailableError
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,7 @@ async def scan(
     latitude: Optional[float] = Form(None, ge=-90, le=90),
     longitude: Optional[float] = Form(None, ge=-180, le=180),
     accuracy_m: Optional[float] = Form(None, ge=0, description="GPS horizontal accuracy in meters."),
+    location_source: LocationSource = Form("live", description="live, or parked (the car's saved position)."),
     extractor: SignExtractor = Depends(get_sign_extractor),
     locator: Locator = Depends(get_locator),
 ) -> ParkingDecision:
@@ -77,7 +79,11 @@ async def scan(
 
     if (latitude is None) != (longitude is None):
         raise HTTPException(422, "latitude and longitude must be sent together")
-    fix = GpsFix(latitude=latitude, longitude=longitude, accuracy_m=accuracy_m) if latitude is not None else None
+    fix = (
+        GpsFix(latitude=latitude, longitude=longitude, accuracy_m=accuracy_m, source=location_source)
+        if latitude is not None
+        else None
+    )
 
     try:
         user_profile = UserProfile.model_validate_json(profile)

@@ -12,6 +12,7 @@ class ReasonCode(str, Enum):
 
     # Verdict reasons
     NO_RESTRICTION = "no_restriction"
+    FREE_OUTSIDE_HOURS = "free_outside_hours"  # the sign itself says free outside its hours
     RED_WHITE_CURB = "red_white_curb"
     NO_STOPPING = "no_stopping"
     NO_PARKING = "no_parking"

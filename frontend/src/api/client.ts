@@ -90,6 +90,7 @@ export async function scanSign({ imageUri, currentTime, profile, location }: Sca
     form.append('latitude', String(location.latitude));
     form.append('longitude', String(location.longitude));
     if (location.accuracy_m != null) form.append('accuracy_m', String(location.accuracy_m));
+    form.append('location_source', location.source ?? 'live');
   }
 
   // No Content-Type header: fetch sets multipart/form-data with the boundary itself.
